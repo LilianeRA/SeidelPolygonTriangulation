@@ -1,13 +1,11 @@
 #include "Trapezoid.h"
 
-
-Trapezoid::Trapezoid() 
+trap_t::trap_t() 
 {
 	
 }
 
 
-Trapezoid::~Trapezoid()
+trap_t::~trap_t()
 {
-	
 }

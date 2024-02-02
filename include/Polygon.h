@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include "Segment.h"
 
 class Polygon
 {
@@ -14,26 +15,18 @@ class Polygon
 
 		void Init();
 
+		bool set_root0(int index, int root);
+		bool set_root1(int index, int root);
+
+		int get_total_segments();
+		int choose_permutation();
+		segment_t* get_segment(int segnum);
 
 	private:
-
-		using point_t = struct {
-			double x, y, z;
-		};
-		using vector_t = struct {
-			double x, y, z;
-		};
-
-		using segment_t = struct {
-			point_t v0, v1;		// two endpoints 
-			int is_inserted;	// inserted in trapezoidation yet ? 
-			int root0, root1;	// root nodes in Q 
-			int next;			// Next logical segment 
-			int prev;			// Previous segment 
-		};
-		
+				
 		int genus;
 		std::vector< segment_t > segments;
+		std::vector<int> permute;
 
 
 		static int choose_idx;

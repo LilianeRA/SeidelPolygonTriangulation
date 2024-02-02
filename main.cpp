@@ -1,5 +1,5 @@
 #include <iostream>
-#include "Polygon.h"
+#include "Triangulation.h"
 
 
 /*
@@ -154,14 +154,23 @@ void print_segments(int n)
 int main(int argc, char *argv[])
 {
 	std::cout << "Hello Worlds\n";
-	Polygon polygon;
-	if (!polygon.ReadFile("../../data_1"))
+
+	Triangulation triangulation;
+	if (!triangulation.ReadFile("../../data_1"))
 	{
 		std::cout << "Polygon not read\n";
 		return -1;
 	}
 	std::cout << "Polygon read\n";
-	polygon.Init();
+	triangulation.Init();
+	triangulation.construct_trapezoids();
+	triangulation.monotonate_trapezoids();
+	triangulation.triangulate_monotone_polygons();
+
+	//for (int i = 0; i < ntriangles; i++)
+	//	std::cout << "triangle #" << op[i][0] << " " << op[i][1] << " " << op[i][1] << "\n";
+
+
 	/*int n, genus;
 
 	if ((argc < 2) || ((n = read_segments(argv[1], &genus)) < 0))

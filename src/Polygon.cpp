@@ -117,15 +117,47 @@ void Polygon::Init()
 
 }
 
+bool Polygon::set_root0(int index, int root)
+{
+	if (index < 0 || index >= segments.size())
+		return false;
+	segments.at(index).root0 = root;
+	return true;
+}
+
+bool Polygon::set_root1(int index, int root)
+{
+	if (index < 0 || index >= segments.size())
+		return false;
+	segments.at(index).root1 = root;
+	return true;
+}
+
+int Polygon::get_total_segments()
+{
+	return segments.size();
+}
+
+int Polygon::choose_permutation()
+{
+	return permute.at(Polygon::choose_idx++);
+}
+
+segment_t* Polygon::get_segment(int segnum)
+{
+	if (segnum < 0 || segnum >= segments.size())
+		return nullptr;
+	return &segments.at(segnum);
+}
+
 // Generate a random permutation of the segments 1..n 
 void Polygon::generate_random_ordering()
 {
-	std::vector<int> permute;
-
+	permute.clear();
 	Polygon::choose_idx = 1;
 
-	register int i; // It's a hint to the compiler that the variable will be heavily used and that you recommend it be kept in a processor register if possible.
-	for (i = 1; i <= segments.size(); i++)
+	//register int i; // It's a hint to the compiler that the variable will be heavily used and that you recommend it be kept in a processor register if possible.
+	for (int i = 1; i <= segments.size(); i++)
 	{
 		permute.push_back(i);
 	}
