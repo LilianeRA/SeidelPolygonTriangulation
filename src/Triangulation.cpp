@@ -1,9 +1,11 @@
 #include "Triangulation.h"
+#include <iostream>
 #include <cmath>
 
 Triangulation::Triangulation()
 {
 	polygon = new Polygon();
+	query = new Query();
 }
 
 
@@ -20,6 +22,7 @@ bool Triangulation::ReadFile(const std::string& filepath)
 void Triangulation::Init()
 {
 	polygon->Init();
+	query->Init(polygon);
 }
 
 // Get log*n for given n 
@@ -39,9 +42,9 @@ int math_logstar_n(int n)
 
 int math_N(int n, int h)
 {
-	double v;
+	double v = n;
 
-	for (int i = 0, v = n; i < h; i++)
+	for (int i = 0; i < h; i++)
 		v = std::log2(v);
 
 	return (int)std::ceil((double)1.0 * n / v);
@@ -49,50 +52,32 @@ int math_N(int n, int h)
 
 void Triangulation::construct_trapezoids()
 {
-	this->query = new Query(polygon);
 	int nseg = polygon->get_total_segments();
-
-	// Add the first segment and get the query structure and trapezoid 
-	// list initialised 
-
-	int segnum = polygon->choose_permutation();
-	int root = query->init_query_structure(segnum, polygon->get_total_segments());
-
-	for (int i = 1; i <= nseg; i++)
-	{
-		polygon->set_root0(i, root);
-		polygon->set_root1(i, root);
-		//seg[i].root0 = seg[i].root1 = root;
-	}
-
 	for (int h = 1; h <= math_logstar_n(nseg); h++)
 	{
+		//std::cout << "h " << h << " ";
+		//std::cout << "math_N(nseg, h - 1) + 1 = " << math_N(nseg, h - 1) + 1 << ", ";
+		//std::cout << "math_N(nseg, h) = " << math_N(nseg, h) << std::endl;
 		for (int i = math_N(nseg, h - 1) + 1; i <= math_N(nseg, h); i++)
 		{
-			segnum = polygon->choose_permutation();
+			int segnum = polygon->choose_permutation();
+			//std::cout << "i " << i << " segnum " << segnum << std::endl;
 			query->add_segment(segnum);
 		}
 
+		//std::cout << "find_new_roots\n";
 		// Find a new root for each of the segment endpoints
-		for (int i = 1; i <= nseg; i++)
+		for (int i = 0; i < nseg; i++)
 			query->find_new_roots(i);
 	}
 
+	//std::cout << "math_N(nseg, math_logstar_n(nseg)) + 1 = " << math_N(nseg, math_logstar_n(nseg)) + 1 << std::endl;
+	//std::cout << "nseg " << nseg << std::endl;
 	for (int i = math_N(nseg, math_logstar_n(nseg)) + 1; i <= nseg; i++)
 	{
-		segnum = polygon->choose_permutation();
+		int segnum = polygon->choose_permutation();
+		//std::cout << "i " << i << " segnum " << segnum << std::endl;
 		query->add_segment(segnum);
 	}
-
 }
 
-void Triangulation::monotonate_trapezoids()
-{
-	monotonate = new Monotonate(polygon, query);
-	total_monotone = monotonate->monotonate_trapezoids();
-}
-
-void Triangulation::triangulate_monotone_polygons()
-{
-	monotonate->triangulate_monotone_polygons(total_monotone);
-}

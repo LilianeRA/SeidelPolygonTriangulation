@@ -15,14 +15,11 @@ class Triangulation
 
         void Init();
         void construct_trapezoids();
-        void monotonate_trapezoids();
-        void triangulate_monotone_polygons();
     private:
         Polygon *polygon = nullptr;
+
         Query* query = nullptr;
         Monotonate* monotonate = nullptr;
-
-        int total_monotone = 0;
 
 };
 

@@ -15,16 +15,17 @@ class Polygon
 
 		void Init();
 
+		int choose_permutation() const;
+		segment_t* get_segment(int segnum);
+		int get_total_segments() const;
+
+		void set_segment_inserted(int segnum, bool inserted);
 		bool set_root0(int index, int root);
 		bool set_root1(int index, int root);
 
-		int get_total_segments();
-		int choose_permutation();
-		segment_t* get_segment(int segnum);
-
 	private:
 				
-		int genus;
+		//int genus;
 		std::vector< segment_t > segments;
 		std::vector<int> permute;
 

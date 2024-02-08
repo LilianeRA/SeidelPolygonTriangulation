@@ -7,52 +7,42 @@
 class Query
 {
     public:
-        Query(Polygon* polygon);
+        Query();
 		virtual ~Query();
 
-        int init_query_structure(int segnum, int total_segments);
+        void Init(Polygon *polygon);
+
         void add_segment(int segnum);
         void find_new_roots(int segnum);
 
-        std::vector < trap_t > tr;      // Trapezoid structure
-
-        bool _equal_to(const point_t* v0, const point_t* v1);
-        bool _greater_than(const point_t* v0, const point_t* v1);
-        bool _less_than(const point_t* v0, const point_t* v1);
     private:
-        Polygon* polygon = nullptr;
-        // Node attributes for every node in the query structure 
-
-        using node_t = struct {
-            int nodetype;			// Y-node or S-node 
-            int segnum;
-            point_t yval;
-            int trnum;
-            int parent;			    // doubly linked DAG 
-            int left, right;		// children 
+        enum class NODE_TYPE
+        {
+            T_X = 1, T_Y = 2, T_SINK = 3, T_ERROR = 0
         };
 
+        // Node attributes for every node in the query structure 
+        using node_t = struct node{
+            int segnum = -1; // segment number
+            int trnum = -1;  // trapezoid number
+            NODE_TYPE nodetype = NODE_TYPE::T_ERROR; // Y-node or S-node 
+            point_t yval;
 
-        int q_idx = 0;
-        int tr_idx = 0;
+            int parent = -1;  // doubly linked DAG 
+            int left = -1;    // children
+            int right = -1;
+        };
 
-        std::vector < node_t > qs;	    // Query structure 
+        Polygon* polygon = nullptr;
+        Trapezoid* trapezoid_struct = nullptr;
+        std::vector < node_t > qs;  // Query structure 
+
 
         int newnode();
-        int newtrap();
-
-        void _max(point_t* yval, const point_t* v0, const point_t* v1);
-        void _min(point_t* yval, const point_t* v0, const point_t* v1);
-
-        bool _greater_than_equal_to(const point_t* v0, const point_t* v1);
         bool inserted(int segnum, int whichpt);
-        bool is_left_of(int segnum, const point_t* v);
+        int locate_endpoint(const point_t* v, const point_t* vo, int r);
 
-        int locate_endpoint(point_t* v, const point_t* vo, int r);
-
-
-        void merge_trapezoids(int segnum, int tfirst, int tlast, int side);
-
+        void merge_trapezoids(int segnum, int tfirst, int tlast, Trapezoid::SIDE side);
 };
 
 #endif // QUERY_H

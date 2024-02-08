@@ -1,871 +1,100 @@
 #include <iostream>
+#include <algorithm>
 #include "Query.h"
 
-const int ST_VALID = 1;		// for trapezium state 
-const int ST_INVALID = 2;		
 
 const int FIRSTPT = 1;		// checking whether pt. is inserted 
 const int LASTPT = 2;
 
-const int T_X = 1;
-const int T_Y = 2;
-const int T_SINK = 3;
-
-const int  S_LEFT = 1;		// for merge-direction
-const int  S_RIGHT = 2;
-
-const double C_EPS = 1.0e-7;
-#define FP_EQUAL(s, t) (std::abs(s - t) <= C_EPS)
-#define CROSS(v0, v1, v2) (((v1).x - (v0).x)*((v2).y - (v0).y) - \
-			   ((v1).y - (v0).y)*((v2).x - (v0).x))
-
-Query::Query(Polygon* polygon)
+Query::Query()
 {
-	this->polygon = polygon;
+	trapezoid_struct = new Trapezoid();
 }
 
 
 Query::~Query()
 {
-	
 }
-/* Initilialise the query structure (Q) and the trapezoid table (T)
- * when the first segment is added to start the trapezoidation. The
- * query-tree starts out with 4 trapezoids, one S-node and 2 Y-nodes
- *
- *                4
- *   -----------------------------------
- *  		  \
- *  	1	   \        2
- *  		    \
- *   -----------------------------------
- *                3
- */
-int Query::init_query_structure(int segnum, int total_segments)
-{
 
+void Query::Init(Polygon* polygon)
+{
+	this->polygon = polygon;
 	qs.clear();
-	for (int i = 0; i < total_segments; i++)
-	{
-		node_t new_node;
-		qs.push_back(new_node);
-	}
+	// insert a random segment of the polygon
+	int segnum = polygon->choose_permutation();
+	const segment_t* s = polygon->get_segment(segnum);
 
-	int i1, i2, i3, i4, i5, i6, i7, root;
+	//			i1
+	//		   /  \
+	//	   Y i3    i2 S
+	//		/ \
+	//  S i4   i5 X
+	//        /  \
+	//	  S i6    i7 S
+
+	// root
+	const int i1 = newnode();
+	qs.at(i1).nodetype = NODE_TYPE::T_Y;
+	point_t::_max(&qs.at(i1).yval, &s->v0, &s->v1);
+	// right node S
+	const int i2 =  newnode();
+	qs.at(i1).right = i2;
+	qs.at(i2).nodetype = NODE_TYPE::T_SINK;
+	qs.at(i2).parent = i1;
+	// left node Y
+	const int i3 = newnode();
+	qs.at(i1).left = i3;
+	qs.at(i3).nodetype = NODE_TYPE::T_Y;
+	point_t::_min(&qs.at(i3).yval, &s->v0, &s->v1); 
+	qs.at(i3).parent = i1;
+	// left node S
+	const int i4 = newnode();
+	qs.at(i3).left = i4;
+	qs.at(i4).nodetype = NODE_TYPE::T_SINK;
+	qs.at(i4).parent = i3;
+	// right node X
+	const int i5 = newnode();
+	qs.at(i3).right = i5;
+	qs.at(i5).nodetype = NODE_TYPE::T_X;
+	qs.at(i5).segnum = segnum;
+	qs.at(i5).parent = i3;
+	// left node S
+	const int i6 = newnode();
+	qs.at(i5).left = i6;
+	qs.at(i6).nodetype = NODE_TYPE::T_SINK;
+	qs.at(i6).parent = i5;
+	// right node S
+	const int i7 = newnode();
+	qs.at(i5).right = i7;
+	qs.at(i7).nodetype = NODE_TYPE::T_SINK;
+	qs.at(i7).parent = i5;
+
+	// -----------------------------------------------------
 	int t1, t2, t3, t4;
-	segment_t* s = polygon->get_segment(segnum);
+	trapezoid_struct->Init(qs.at(i1).yval, qs.at(i3).yval, segnum, t1, t2, t3, t4, i6, i7, i4, i2);
 
-	q_idx = tr_idx = 1;
-	//memset((void*)tr, 0, sizeof(tr));
-	//memset((void*)qs, 0, sizeof(qs));
+	qs.at(i2).trnum = t4;
+	qs.at(i4).trnum = t3;
+	qs.at(i6).trnum = t1;
+	qs.at(i7).trnum = t2;
 
-	i1 = newnode();
-	qs.at(i1).nodetype = T_Y;
-	_max(&qs.at(i1).yval, &s->v0, &s->v1); // root 
-	root = i1;
+	polygon->set_segment_inserted(segnum, true);
 
-	qs[i1].right = i2 = newnode();
-	qs[i2].nodetype = T_SINK;
-	qs[i2].parent = i1;
-
-	qs[i1].left = i3 = newnode();
-	qs[i3].nodetype = T_Y;
-	_min(&qs[i3].yval, &s->v0, &s->v1); /* root */
-	qs[i3].parent = i1;
-
-	qs[i3].left = i4 = newnode();
-	qs[i4].nodetype = T_SINK;
-	qs[i4].parent = i3;
-
-	qs[i3].right = i5 = newnode();
-	qs[i5].nodetype = T_X;
-	qs[i5].segnum = segnum;
-	qs[i5].parent = i3;
-
-	qs[i5].left = i6 = newnode();
-	qs[i6].nodetype = T_SINK;
-	qs[i6].parent = i5;
-
-	qs[i5].right = i7 = newnode();
-	qs[i7].nodetype = T_SINK;
-	qs[i7].parent = i5;
-
-
-	t1 = newtrap();		// middle left 
-	t2 = newtrap();		// middle right 
-	t3 = newtrap();		// bottom-most 
-	t4 = newtrap();		// topmost 
-
-	tr[t1].hi = tr[t2].hi = tr[t4].lo = qs[i1].yval;
-	tr[t1].lo = tr[t2].lo = tr[t3].hi = qs[i3].yval;
-	tr[t4].hi.y = (double)(INFINITY);
-	tr[t4].hi.x = (double)(INFINITY);
-	tr[t3].lo.y = (double)-1 * (INFINITY);
-	tr[t3].lo.x = (double)-1 * (INFINITY);
-	tr[t1].rseg = tr[t2].lseg = segnum;
-	tr[t1].u0 = tr[t2].u0 = t4;
-	tr[t1].d0 = tr[t2].d0 = t3;
-	tr[t4].d0 = tr[t3].u0 = t1;
-	tr[t4].d1 = tr[t3].u1 = t2;
-
-	tr[t1].sink = i6;
-	tr[t2].sink = i7;
-	tr[t3].sink = i4;
-	tr[t4].sink = i2;
-
-	tr[t1].state = tr[t2].state = trap_t::STATE::ST_VALID;
-	tr[t3].state = tr[t4].state = trap_t::STATE::ST_VALID;
-
-	qs[i2].trnum = t4;
-	qs[i4].trnum = t3;
-	qs[i6].trnum = t1;
-	qs[i7].trnum = t2;
-
-	s->is_inserted = true;
-	return root;
+	int nseg = polygon->get_total_segments();
+	for (int i = 0; i < nseg; i++)
+	{
+		polygon->set_root0(i, i1);
+		polygon->set_root1(i, i1);
+	}
 }
 
 
-/* Add in the new segment into the trapezoidation and update Q and T
- * structures. First locate the two endpoints of the segment in the
- * Q-structure. Then start from the topmost trapezoid and go down to
- * the  lower trapezoid dividing all the trapezoids in between .
- */
-void Query::add_segment(int segnum)
-{
-	int tu, tl, sk, tfirst, tlast, tnext;
-	int tfirstr, tlastr, tfirstl, tlastl;
-	int i1, i2, t, t1, t2, tn;
-	point_t tpt;
-	int tritop = 0, tribot = 0, is_swapped = 0;
-	int tmptriseg;
-
-	segment_t s = *polygon->get_segment(segnum); // thats a copy?
-
-	if (_greater_than(&s.v1, &s.v0)) /* Get higher vertex in v0 */
-	{
-		int tmp;
-		tpt = s.v0;
-		s.v0 = s.v1;
-		s.v1 = tpt;
-		tmp = s.root0;
-		s.root0 = s.root1;
-		s.root1 = tmp;
-		is_swapped = true;
-	}
-
-	if ((is_swapped) ? !inserted(segnum, LASTPT) : !inserted(segnum, FIRSTPT))     // insert v0 in the tree 
-	{
-		int tmp_d;
-
-		tu = locate_endpoint(&s.v0, &s.v1, s.root0);
-		tl = newtrap();		/* tl is the new lower trapezoid */
-		tr[tl].state = trap_t::STATE::ST_VALID;
-		tr[tl] = tr[tu];
-		tr[tu].lo.y = tr[tl].hi.y = s.v0.y;
-		tr[tu].lo.x = tr[tl].hi.x = s.v0.x;
-		tr[tu].d0 = tl;
-		tr[tu].d1 = 0;
-		tr[tl].u0 = tu;
-		tr[tl].u1 = 0;
-
-		if (((tmp_d = tr[tl].d0) > 0) && (tr[tmp_d].u0 == tu))
-			tr[tmp_d].u0 = tl;
-		if (((tmp_d = tr[tl].d0) > 0) && (tr[tmp_d].u1 == tu))
-			tr[tmp_d].u1 = tl;
-
-		if (((tmp_d = tr[tl].d1) > 0) && (tr[tmp_d].u0 == tu))
-			tr[tmp_d].u0 = tl;
-		if (((tmp_d = tr[tl].d1) > 0) && (tr[tmp_d].u1 == tu))
-			tr[tmp_d].u1 = tl;
-
-		// Now update the query structure and obtain the sinks for the two trapezoids	
-		i1 = newnode();		// Upper trapezoid sink 
-		i2 = newnode();		// Lower trapezoid sink 
-		sk = tr[tu].sink;
-
-		qs[sk].nodetype = T_Y;
-		qs[sk].yval = s.v0;
-		qs[sk].segnum = segnum;	/* not really reqd ... maybe later */
-		qs[sk].left = i2;
-		qs[sk].right = i1;
-
-		qs[i1].nodetype = T_SINK;
-		qs[i1].trnum = tu;
-		qs[i1].parent = sk;
-
-		qs[i2].nodetype = T_SINK;
-		qs[i2].trnum = tl;
-		qs[i2].parent = sk;
-
-		tr[tu].sink = i1;
-		tr[tl].sink = i2;
-		tfirst = tl;
-	}
-	else // v0 already present 
-	{       
-		// Get the topmost intersecting trapezoid
-		tfirst = locate_endpoint(&s.v0, &s.v1, s.root0);
-		tritop = 1;
-	}
-
-
-	if ((is_swapped) ? !inserted(segnum, FIRSTPT) :
-		!inserted(segnum, LASTPT))     // insert v1 in the tree
-	{
-		int tmp_d;
-
-		tu = locate_endpoint(&s.v1, &s.v0, s.root1);
-
-		tl = newtrap();		// tl is the new lower trapezoid 
-		tr[tl].state = trap_t::STATE::ST_VALID;
-		tr[tl] = tr[tu];
-		tr[tu].lo.y = tr[tl].hi.y = s.v1.y;
-		tr[tu].lo.x = tr[tl].hi.x = s.v1.x;
-		tr[tu].d0 = tl;
-		tr[tu].d1 = 0;
-		tr[tl].u0 = tu;
-		tr[tl].u1 = 0;
-
-		if (((tmp_d = tr[tl].d0) > 0) && (tr[tmp_d].u0 == tu))
-			tr[tmp_d].u0 = tl;
-		if (((tmp_d = tr[tl].d0) > 0) && (tr[tmp_d].u1 == tu))
-			tr[tmp_d].u1 = tl;
-
-		if (((tmp_d = tr[tl].d1) > 0) && (tr[tmp_d].u0 == tu))
-			tr[tmp_d].u0 = tl;
-		if (((tmp_d = tr[tl].d1) > 0) && (tr[tmp_d].u1 == tu))
-			tr[tmp_d].u1 = tl;
-
-		// Now update the query structure and obtain the sinks for the two trapezoids 
-
-		i1 = newnode();		// Upper trapezoid sink 
-		i2 = newnode();		// Lower trapezoid sink 
-		sk = tr[tu].sink;
-
-		qs[sk].nodetype = T_Y;
-		qs[sk].yval = s.v1;
-		qs[sk].segnum = segnum;	// not really reqd ... maybe later 
-		qs[sk].left = i2;
-		qs[sk].right = i1;
-
-		qs[i1].nodetype = T_SINK;
-		qs[i1].trnum = tu;
-		qs[i1].parent = sk;
-
-		qs[i2].nodetype = T_SINK;
-		qs[i2].trnum = tl;
-		qs[i2].parent = sk;
-
-		tr[tu].sink = i1;
-		tr[tl].sink = i2;
-		tlast = tu;
-	}
-	else // v1 already present 
-	{       
-		// Get the lowermost intersecting trapezoid 
-		tlast = locate_endpoint(&s.v1, &s.v0, s.root1);
-		tribot = 1;
-	}
-
-	// Thread the segment into the query tree creating a new X-node 
-	// First, split all the trapezoids which are intersected by s into two 
-
-	t = tfirst;			// topmost trapezoid 
-
-	while ((t > 0) && _greater_than_equal_to(&tr[t].lo, &tr[tlast].lo))
-		// traverse from top to bot 
-	{
-		int t_sav, tn_sav;
-		sk = tr[t].sink;
-		i1 = newnode();		// left trapezoid sink 
-		i2 = newnode();		// right trapezoid sink 
-
-		qs[sk].nodetype = T_X;
-		qs[sk].segnum = segnum;
-		qs[sk].left = i1;
-		qs[sk].right = i2;
-
-		qs[i1].nodetype = T_SINK;	// left trapezoid (use existing one) 
-		qs[i1].trnum = t;
-		qs[i1].parent = sk;
-
-		qs[i2].nodetype = T_SINK;	// right trapezoid (allocate new) 
-		qs[i2].trnum = tn = newtrap();
-		tr[tn].state = trap_t::STATE::ST_VALID;
-		qs[i2].parent = sk;
-
-		if (t == tfirst)
-			tfirstr = tn;
-		if (_equal_to(&tr[t].lo, &tr[tlast].lo))
-			tlastr = tn;
-
-		tr[tn] = tr[t];
-		tr[t].sink = i1;
-		tr[tn].sink = i2;
-		t_sav = t;
-		tn_sav = tn;
-
-		// error 
-		if ((tr[t].d0 <= 0) && (tr[t].d1 <= 0)) // case cannot arise 
-		{
-			std::cout << "Error: add_segment: error\n";
-			break;
-		}
-		// only one trapezoid below. partition t into two and make the 
-		// two resulting trapezoids t and tn as the upper neighbours of 
-		// the sole lower trapezoid 
-		else if ((tr[t].d0 > 0) && (tr[t].d1 <= 0))
-		{
-			// Only one trapezoid below 
-			if ((tr[t].u0 > 0) && (tr[t].u1 > 0))
-			{			
-				// continuation of a chain from abv.
-				if (tr[t].usave > 0) // three upper neighbours
-				{
-					if (tr[t].uside == S_LEFT)
-					{
-						tr[tn].u0 = tr[t].u1;
-						tr[t].u1 = -1;
-						tr[tn].u1 = tr[t].usave;
-
-						tr[tr[t].u0].d0 = t;
-						tr[tr[tn].u0].d0 = tn;
-						tr[tr[tn].u1].d0 = tn;
-					}
-					else // intersects in the right
-					{
-						tr[tn].u1 = -1;
-						tr[tn].u0 = tr[t].u1;
-						tr[t].u1 = tr[t].u0;
-						tr[t].u0 = tr[t].usave;
-
-						tr[tr[t].u0].d0 = t;
-						tr[tr[t].u1].d0 = t;
-						tr[tr[tn].u0].d0 = tn;
-					}
-
-					tr[t].usave = tr[tn].usave = 0;
-				}
-				else		// No usave.... simple case 
-				{
-					tr[tn].u0 = tr[t].u1;
-					tr[t].u1 = tr[tn].u1 = -1;
-					tr[tr[tn].u0].d0 = tn;
-				}
-			}
-			else // fresh seg. or upward cusp
-			{			 
-				int tmp_u = tr[t].u0;
-				int td0, td1;
-				if (((td0 = tr[tmp_u].d0) > 0) &&
-					((td1 = tr[tmp_u].d1) > 0))
-				{	
-					// upward cusp 
-					if ((tr[td0].rseg > 0) &&
-						!is_left_of(tr[td0].rseg, &s.v1))
-					{
-						tr[t].u0 = tr[t].u1 = tr[tn].u1 = -1;
-						tr[tr[tn].u0].d1 = tn;
-					}
-					else // cusp going leftwards 
-					{
-						tr[tn].u0 = tr[tn].u1 = tr[t].u1 = -1;
-						tr[tr[t].u0].d0 = t;
-					}
-				}
-				else // fresh segment 
-				{
-					tr[tr[t].u0].d0 = t;
-					tr[tr[t].u0].d1 = tn;
-				}
-			}
-			
-			if (FP_EQUAL(tr[t].lo.y, tr[tlast].lo.y) &&
-				FP_EQUAL(tr[t].lo.x, tr[tlast].lo.x) && tribot)
-			{		// bottom forms a triangle 
-
-				if (is_swapped)
-					tmptriseg = polygon->get_segment(segnum)->prev; // seg[segnum].prev;
-				else
-					tmptriseg = polygon->get_segment(segnum)->next; // seg[segnum].next;
-
-				if ((tmptriseg > 0) && is_left_of(tmptriseg, &s.v0))
-				{
-					// L-R downward cusp 
-					tr[tr[t].d0].u0 = t;
-					tr[tn].d0 = tr[tn].d1 = -1;
-				}
-				else
-				{
-					// R-L downward cusp 
-					tr[tr[tn].d0].u1 = tn;
-					tr[t].d0 = tr[t].d1 = -1;
-				}
-			}
-			else
-			{
-				if ((tr[tr[t].d0].u0 > 0) && (tr[tr[t].d0].u1 > 0))
-				{
-					if (tr[tr[t].d0].u0 == t) // passes thru LHS 
-					{
-						tr[tr[t].d0].usave = tr[tr[t].d0].u1;
-						tr[tr[t].d0].uside = S_LEFT;
-					}
-					else
-					{
-						tr[tr[t].d0].usave = tr[tr[t].d0].u0;
-						tr[tr[t].d0].uside = S_RIGHT;
-					}
-				}
-				tr[tr[t].d0].u0 = t;
-				tr[tr[t].d0].u1 = tn;
-			}
-			t = tr[t].d0;
-		}
-		else if ((tr[t].d0 <= 0) && (tr[t].d1 > 0))
-		{			
-			// Only one trapezoid below 
-			if ((tr[t].u0 > 0) && (tr[t].u1 > 0))
-			{			
-				// continuation of a chain from abv. 
-				if (tr[t].usave > 0) // three upper neighbours 
-				{
-					if (tr[t].uside == S_LEFT)
-					{
-						tr[tn].u0 = tr[t].u1;
-						tr[t].u1 = -1;
-						tr[tn].u1 = tr[t].usave;
-
-						tr[tr[t].u0].d0 = t;
-						tr[tr[tn].u0].d0 = tn;
-						tr[tr[tn].u1].d0 = tn;
-					}
-					else		// intersects in the right 
-					{
-						tr[tn].u1 = -1;
-						tr[tn].u0 = tr[t].u1;
-						tr[t].u1 = tr[t].u0;
-						tr[t].u0 = tr[t].usave;
-
-						tr[tr[t].u0].d0 = t;
-						tr[tr[t].u1].d0 = t;
-						tr[tr[tn].u0].d0 = tn;
-					}
-
-					tr[t].usave = tr[tn].usave = 0;
-				}
-				else		// No usave.... simple case 
-				{
-					tr[tn].u0 = tr[t].u1;
-					tr[t].u1 = tr[tn].u1 = -1;
-					tr[tr[tn].u0].d0 = tn;
-				}
-			}
-			else // fresh seg. or upward cusp 
-			{			
-				int tmp_u = tr[t].u0;
-				int td0, td1;
-				if (((td0 = tr[tmp_u].d0) > 0) &&
-					((td1 = tr[tmp_u].d1) > 0))
-				{		
-					// upward cusp 
-					if ((tr[td0].rseg > 0) &&
-						!is_left_of(tr[td0].rseg, &s.v1))
-					{
-						tr[t].u0 = tr[t].u1 = tr[tn].u1 = -1;
-						tr[tr[tn].u0].d1 = tn;
-					}
-					else
-					{
-						tr[tn].u0 = tr[tn].u1 = tr[t].u1 = -1;
-						tr[tr[t].u0].d0 = t;
-					}
-				}
-				else		// fresh segment 
-				{
-					tr[tr[t].u0].d0 = t;
-					tr[tr[t].u0].d1 = tn;
-				}
-			}
-
-			if (FP_EQUAL(tr[t].lo.y, tr[tlast].lo.y) &&
-				FP_EQUAL(tr[t].lo.x, tr[tlast].lo.x) && tribot)
-			{	
-				// bottom forms a triangle 
-				int tmpseg;
-
-				if (is_swapped)
-					tmptriseg = polygon->get_segment(segnum)->prev; // seg[segnum].prev;
-				else
-					tmptriseg = polygon->get_segment(segnum)->next; // seg[segnum].next;
-
-				if ((tmpseg > 0) && is_left_of(tmpseg, &s.v0))
-				{
-					// L-R downward cusp 
-					tr[tr[t].d1].u0 = t;
-					tr[tn].d0 = tr[tn].d1 = -1;
-				}
-				else
-				{
-					// R-L downward cusp 
-					tr[tr[tn].d1].u1 = tn;
-					tr[t].d0 = tr[t].d1 = -1;
-				}
-			}
-			else
-			{
-				if ((tr[tr[t].d1].u0 > 0) && (tr[tr[t].d1].u1 > 0))
-				{
-					if (tr[tr[t].d1].u0 == t) // passes thru LHS 
-					{
-						tr[tr[t].d1].usave = tr[tr[t].d1].u1;
-						tr[tr[t].d1].uside = S_LEFT;
-					}
-					else
-					{
-						tr[tr[t].d1].usave = tr[tr[t].d1].u0;
-						tr[tr[t].d1].uside = S_RIGHT;
-					}
-				}
-				tr[tr[t].d1].u0 = t;
-				tr[tr[t].d1].u1 = tn;
-			}
-			t = tr[t].d1;
-		}
-		// two trapezoids below. Find out which one is intersected by 
-		// this segment and proceed down that one 
-		else
-		{
-			int tmpseg = tr[tr[t].d0].rseg;
-			double y0, yt;
-			point_t tmppt;
-			int tnext, i_d0, i_d1;
-
-			i_d0 = i_d1 = false;
-			if (FP_EQUAL(tr[t].lo.y, s.v0.y))
-			{
-				if (tr[t].lo.x > s.v0.x)
-					i_d0 = true;
-				else
-					i_d1 = true;
-			}
-			else
-			{
-				tmppt.y = y0 = tr[t].lo.y;
-				yt = (y0 - s.v0.y) / (s.v1.y - s.v0.y);
-				tmppt.x = s.v0.x + yt * (s.v1.x - s.v0.x);
-
-				if (_less_than(&tmppt, &tr[t].lo))
-					i_d0 = true;
-				else
-					i_d1 = true;
-			}
-			// check continuity from the top so that the lower-neighbour 
-			// values are properly filled for the upper trapezoid 
-			if ((tr[t].u0 > 0) && (tr[t].u1 > 0))
-			{			
-				// continuation of a chain from abv.
-				if (tr[t].usave > 0) /* three upper neighbours */
-				{
-					if (tr[t].uside == S_LEFT)
-					{
-						tr[tn].u0 = tr[t].u1;
-						tr[t].u1 = -1;
-						tr[tn].u1 = tr[t].usave;
-
-						tr[tr[t].u0].d0 = t;
-						tr[tr[tn].u0].d0 = tn;
-						tr[tr[tn].u1].d0 = tn;
-					}
-					else		/* intersects in the right */
-					{
-						tr[tn].u1 = -1;
-						tr[tn].u0 = tr[t].u1;
-						tr[t].u1 = tr[t].u0;
-						tr[t].u0 = tr[t].usave;
-
-						tr[tr[t].u0].d0 = t;
-						tr[tr[t].u1].d0 = t;
-						tr[tr[tn].u0].d0 = tn;
-					}
-
-					tr[t].usave = tr[tn].usave = 0;
-				}
-				else		// No usave.... simple case
-				{
-					tr[tn].u0 = tr[t].u1;
-					tr[tn].u1 = -1;
-					tr[t].u1 = -1;
-					tr[tr[tn].u0].d0 = tn;
-				}
-			}
-			else // fresh seg. or upward cusp 
-			{			
-				int tmp_u = tr[t].u0;
-				int td0, td1;
-				if (((td0 = tr[tmp_u].d0) > 0) &&
-					((td1 = tr[tmp_u].d1) > 0))
-				{	
-					// upward cusp 
-					if ((tr[td0].rseg > 0) &&
-						!is_left_of(tr[td0].rseg, &s.v1))
-					{
-						tr[t].u0 = tr[t].u1 = tr[tn].u1 = -1;
-						tr[tr[tn].u0].d1 = tn;
-					}
-					else
-					{
-						tr[tn].u0 = tr[tn].u1 = tr[t].u1 = -1;
-						tr[tr[t].u0].d0 = t;
-					}
-				}
-				else		// fresh segment 
-				{
-					tr[tr[t].u0].d0 = t;
-					tr[tr[t].u0].d1 = tn;
-				}
-			}
-
-			if (FP_EQUAL(tr[t].lo.y, tr[tlast].lo.y) &&
-				FP_EQUAL(tr[t].lo.x, tr[tlast].lo.x) && tribot)
-			{
-				// this case arises only at the lowest trapezoid.. i.e.
-				// tlast, if the lower endpoint of the segment is
-				// already inserted in the structure 
-
-				tr[tr[t].d0].u0 = t;
-				tr[tr[t].d0].u1 = -1;
-				tr[tr[t].d1].u0 = tn;
-				tr[tr[t].d1].u1 = -1;
-
-				tr[tn].d0 = tr[t].d1;
-				tr[t].d1 = tr[tn].d1 = -1;
-
-				tnext = tr[t].d1;
-			}
-			else if (i_d0) // intersecting d0
-			{
-				tr[tr[t].d0].u0 = t;
-				tr[tr[t].d0].u1 = tn;
-				tr[tr[t].d1].u0 = tn;
-				tr[tr[t].d1].u1 = -1;
-
-				// new code to determine the bottom neighbours of the
-				// newly partitioned trapezoid 
-
-				tr[t].d1 = -1;
-
-				tnext = tr[t].d0;
-			}
-			else	// intersecting d1 
-			{
-				tr[tr[t].d0].u0 = t;
-				tr[tr[t].d0].u1 = -1;
-				tr[tr[t].d1].u0 = t;
-				tr[tr[t].d1].u1 = tn;
-
-				// new code to determine the bottom neighbours of the 
-				// newly partitioned trapezoid 
-
-				tr[tn].d0 = tr[t].d1;
-				tr[tn].d1 = -1;
-
-				tnext = tr[t].d1;
-			}
-
-			t = tnext;
-		}
-
-		tr[t_sav].rseg = tr[tn_sav].lseg = segnum;
-	} // end-while 
-
-	// Now combine those trapezoids which share common segments. We can
-	// use the pointers to the parent to connect these together. This 
-	// works only because all these new trapezoids have been formed 
-	// due to splitting by the segment, and hence have only one parent 
-
-	tfirstl = tfirst;
-	tlastl = tlast;
-	merge_trapezoids(segnum, tfirstl, tlastl, S_LEFT);
-	merge_trapezoids(segnum, tfirstr, tlastr, S_RIGHT);
-
-	polygon->get_segment(segnum)->is_inserted = true;
-}
-
-
-// Thread in the segment into the existing trapezoidation. The
-// limiting trapezoids are given by tfirst and tlast (which are the
-// trapezoids containing the two endpoints of the segment. Merges all
-// possible trapezoids which flank this segment and have been recently
-// divided because of its insertion
-void Query::merge_trapezoids(int segnum, int tfirst, int tlast, int side)
-{
-	int t, tnext, cond;
-	int ptnext;
-
-	// First merge polys on the LHS 
-	t = tfirst;
-	while ((t > 0) && _greater_than_equal_to(&tr[t].lo, &tr[tlast].lo))
-	{
-		if (side == S_LEFT)
-			cond = ((((tnext = tr[t].d0) > 0) && (tr[tnext].rseg == segnum)) ||
-				(((tnext = tr[t].d1) > 0) && (tr[tnext].rseg == segnum)));
-		else
-			cond = ((((tnext = tr[t].d0) > 0) && (tr[tnext].lseg == segnum)) ||
-				(((tnext = tr[t].d1) > 0) && (tr[tnext].lseg == segnum)));
-
-		if (cond)
-		{
-			if ((tr[t].lseg == tr[tnext].lseg) &&
-				(tr[t].rseg == tr[tnext].rseg)) // good neighbours 
-			{			             
-				// merge them */
-				// Use the upper node as the new node i.e. t 
-
-				ptnext = qs[tr[tnext].sink].parent;
-
-				if (qs[ptnext].left == tr[tnext].sink)
-					qs[ptnext].left = tr[t].sink;
-				else
-					qs[ptnext].right = tr[t].sink;	// redirect parent 
-
-				// Change the upper neighbours of the lower trapezoids 
-
-				if ((tr[t].d0 = tr[tnext].d0) > 0)
-					if (tr[tr[t].d0].u0 == tnext)
-						tr[tr[t].d0].u0 = t;
-					else if (tr[tr[t].d0].u1 == tnext)
-						tr[tr[t].d0].u1 = t;
-
-				if ((tr[t].d1 = tr[tnext].d1) > 0)
-					if (tr[tr[t].d1].u0 == tnext)
-						tr[tr[t].d1].u0 = t;
-					else if (tr[tr[t].d1].u1 == tnext)
-						tr[tr[t].d1].u1 = t;
-
-				tr[t].lo = tr[tnext].lo;
-				tr[tnext].state = trap_t::STATE::ST_INVALID; // invalidate the lower trapezium 
-			}
-			else // not good neighbours
-				t = tnext;
-		}
-		else // do not satisfy the outer if 
-			t = tnext;
-
-	} // end-while 
-
-}
-
-
-/* Update the roots stored for each of the endpoints of the segment.
- * This is done to speed up the location-query for the endpoint when
- * the segment is inserted into the trapezoidation subsequently
- */
-void Query::find_new_roots(int segnum)
-{
-	segment_t* s = polygon->get_segment(segnum);
-
-	if (s->is_inserted)
-		return;
-
-	s->root0 = locate_endpoint(&s->v0, &s->v1, s->root0);
-	s->root0 = tr[s->root0].sink;
-
-	s->root1 = locate_endpoint(&s->v1, &s->v0, s->root1);
-	s->root1 = tr[s->root1].sink;
-}
-
-
-// Return a new node to be added into the query tree 
 int Query::newnode()
 {
-	if (q_idx < qs.size())
-		return q_idx++;
-	else
-	{
-		std::cout << "Error: newnode: Query-table overflow\n";
-		return -1;
-	}
-}
+	node_t n;
+	qs.push_back(n);
 
-// Return a free trapezoid 
-int Query::newtrap()
-{
-	trap_t new_trap;
-	tr.push_back(new_trap);
-
-	return tr.size() - 1;
-}
-
-// Return the maximum of the two points into the yval structure 
-void Query::_max(point_t* yval, const point_t* v0, const point_t* v1)
-{
-	if (v0->y > v1->y + C_EPS)
-	{
-		*yval = *v0;
-	}
-	else if (FP_EQUAL(v0->y, v1->y))
-	{
-		if (v0->x > v1->x + C_EPS)
-			*yval = *v0;
-		else
-			*yval = *v1;
-	}
-	else
-	{
-		*yval = *v1;
-	}
-}
-
-void Query::_min(point_t* yval, const point_t* v0, const point_t* v1)
-{
-	if (v0->y < v1->y - C_EPS)
-		*yval = *v0;
-	else if (FP_EQUAL(v0->y, v1->y))
-	{
-		if (v0->x < v1->x)
-			*yval = *v0;
-		else
-			*yval = *v1;
-	}
-	else
-		*yval = *v1;
-}
-
-bool Query::_greater_than(const point_t* v0, const point_t* v1)
-{
-	if (v0->y > v1->y + C_EPS)
-		return true;
-	else if (v0->y < v1->y - C_EPS)
-		return false;
-	else
-		return (v0->x > v1->x);
-}
-
-bool Query::_equal_to(const point_t* v0, const point_t* v1)
-{
-	return (FP_EQUAL(v0->y, v1->y) && FP_EQUAL(v0->x, v1->x));
-}
-
-bool Query::_greater_than_equal_to(const point_t* v0, const point_t* v1)
-{
-	if (v0->y > v1->y + C_EPS)
-		return true;
-	else if (v0->y < v1->y - C_EPS)
-		return false;
-	else
-		return (v0->x >= v1->x);
-}
-
-bool Query::_less_than(const point_t* v0, const point_t* v1)
-{
-	if (v0->y < v1->y - C_EPS)
-		return true;
-	else if (v0->y > v1->y + C_EPS)
-		return false;
-	else
-		return (v0->x < v1->x);
+	return qs.size() - 1;
 }
 
 // Returns true if the corresponding endpoint of the given segment is 
@@ -873,27 +102,27 @@ bool Query::_less_than(const point_t* v0, const point_t* v1)
 // whether the segment which shares this endpoint is already inserted 
 bool Query::inserted(int segnum, int whichpt)
 {
-	if (whichpt == FIRSTPT) //return seg[seg[segnum].prev].is_inserted;
+	if (whichpt == FIRSTPT) 
 		return polygon->get_segment(polygon->get_segment(segnum)->prev)->is_inserted;
-	else //return seg[seg[segnum].next].is_inserted;
+	else 
 		return polygon->get_segment(polygon->get_segment(segnum)->next)->is_inserted;
 }
 
-int Query::locate_endpoint(point_t* v, const point_t* vo, int r)
+int Query::locate_endpoint(const point_t* v, const point_t* vo, int r)
 {
 	node_t* rptr = &qs.at(r);
 
 	switch (rptr->nodetype)
 	{
-	case T_SINK:
+	case NODE_TYPE::T_SINK:
 		return rptr->trnum;
 
-	case T_Y:
-		if (_greater_than(v, &rptr->yval)) // above 
+	case NODE_TYPE::T_Y:
+		if (point_t::_greater_than(v, &rptr->yval)) // above 
 			return locate_endpoint(v, vo, rptr->right);
-		else if (_equal_to(v, &rptr->yval)) // the point is already inserted.
-		{	
-			if (_greater_than(vo, &rptr->yval)) // above 
+		else if (point_t::_equal_to(v, &rptr->yval)) // the point is already inserted.
+		{
+			if (point_t::_greater_than(vo, &rptr->yval)) // above 
 				return locate_endpoint(v, vo, rptr->right);
 			else
 				return locate_endpoint(v, vo, rptr->left); // below 
@@ -901,13 +130,13 @@ int Query::locate_endpoint(point_t* v, const point_t* vo, int r)
 		else
 			return locate_endpoint(v, vo, rptr->left); // below 
 
-	case T_X:
+	case NODE_TYPE::T_X:
 		//if (_equal_to(v, &seg[rptr->segnum].v0) ||
 		//	_equal_to(v, &seg[rptr->segnum].v1))
-		if (_equal_to(v, &polygon->get_segment(rptr->segnum)->v0) ||
-			_equal_to(v, &polygon->get_segment(rptr->segnum)->v1))
+		if (point_t::_equal_to(v, &polygon->get_segment(rptr->segnum)->v0) ||
+			point_t::_equal_to(v, &polygon->get_segment(rptr->segnum)->v1))
 		{
-			if (FP_EQUAL(v->y, vo->y)) // horizontal segment 
+			if (point_t::_equal_y(v, vo)) // horizontal segment 
 			{
 				if (vo->x < v->x)
 					return locate_endpoint(v, vo, rptr->left); // left 
@@ -915,12 +144,12 @@ int Query::locate_endpoint(point_t* v, const point_t* vo, int r)
 					return locate_endpoint(v, vo, rptr->right); // right 
 			}
 
-			else if (is_left_of(rptr->segnum, vo))
+			else if (segment_t::is_left_of(polygon->get_segment(rptr->segnum), vo))
 				return locate_endpoint(v, vo, rptr->left); // left 
 			else
 				return locate_endpoint(v, vo, rptr->right); // right 
 		}
-		else if (is_left_of(rptr->segnum, v))
+		else if (segment_t::is_left_of(polygon->get_segment(rptr->segnum), v))
 			return locate_endpoint(v, vo, rptr->left); // left 
 		else
 			return locate_endpoint(v, vo, rptr->right); // right 
@@ -931,55 +160,187 @@ int Query::locate_endpoint(point_t* v, const point_t* vo, int r)
 	}
 }
 
-// Retun TRUE if the vertex v is to the left of line segment no.
-// segnum. Takes care of the degenerate cases when both the vertices
-// have the same y--cood, etc.
-bool Query::is_left_of(int segnum, const point_t* v)
+// Add in the new segment into the trapezoidation and update Q and T
+// structures. First locate the two endpoints of the segment in the
+// Q-structure. Then start from the topmost trapezoid and go down to
+// the  lower trapezoid dividing all the trapezoids in between .
+void Query::add_segment(int segnum)
 {
 	segment_t* s = polygon->get_segment(segnum);
-	double area;
+	
+	int tfirst = -1, tlast = -1;
+	int tfirstr = -1, tlastr = -1;
+	bool tritop = false, tribot = false;
+	bool is_swapped = false;
 
-	if (_greater_than(&s->v1, &s->v0)) // seg. going upwards 
+	if (point_t::_greater_than(&s->v1, &s->v0)) // Get higher vertex in v0 
 	{
-		if (FP_EQUAL(s->v1.y, v->y))
-		{
-			if (v->x < s->v1.x)
-				area = 1.0;
-			else
-				area = -1.0;
-		}
-		else if (FP_EQUAL(s->v0.y, v->y))
-		{
-			if (v->x < s->v0.x)
-				area = 1.0;
-			else
-				area = -1.0;
-		}
-		else
-			area = CROSS(s->v0, s->v1, (*v));
-	}
-	else				// v0 > v1 
-	{
-		if (FP_EQUAL(s->v1.y, v->y))
-		{
-			if (v->x < s->v1.x)
-				area = 1.0;
-			else
-				area = -1.0;
-		}
-		else if (FP_EQUAL(s->v0.y, v->y))
-		{
-			if (v->x < s->v0.x)
-				area = 1.0;
-			else
-				area = -1.0;
-		}
-		else
-			area = CROSS(s->v1, s->v0, (*v));
+		std::swap(s->v0, s->v1);
+		std::swap(s->root0, s->root1);
+		is_swapped = true;
 	}
 
-	if (area > 0.0)
-		return true;
-	else
-		return false;
+	if ((is_swapped) ? !inserted(segnum, LASTPT) : !inserted(segnum, FIRSTPT))     // insert v0 in the tree 
+	{
+		int tu = locate_endpoint(&s->v0, &s->v1, s->root0);
+		int tl = trapezoid_struct->new_lower_trap(tu, s);
+
+		// Now update the query structure and obtain the sinks for the two trapezoids	
+		int i1 = newnode();		// Upper trapezoid sink 
+		int i2 = newnode();		// Lower trapezoid sink 
+		int sk = trapezoid_struct->get_sink(tu); // tr.at(tu).sink;
+
+		qs.at(sk).nodetype = NODE_TYPE::T_Y;
+		qs.at(sk).yval = s->v0;
+		qs.at(sk).segnum = segnum;	// not really reqd ... maybe later 
+		qs.at(sk).left = i2;
+		qs.at(sk).right = i1;
+
+		qs.at(i1).nodetype = NODE_TYPE::T_SINK;
+		qs.at(i1).trnum = tu;
+		qs.at(i1).parent = sk;
+
+		qs.at(i2).nodetype = NODE_TYPE::T_SINK;
+		qs.at(i2).trnum = tl;
+		qs.at(i2).parent = sk;
+
+		trapezoid_struct->set_sink(tu, i1);
+		trapezoid_struct->set_sink(tl, i2);
+		tfirst = tl;
+	}
+	else // v0 already present 
+	{
+		// Get the topmost intersecting trapezoid
+		tfirst = locate_endpoint(&s->v0, &s->v1, s->root0);
+		tritop = true;
+	}
+
+	if ((is_swapped) ? !inserted(segnum, FIRSTPT) : !inserted(segnum, LASTPT))     // insert v1 in the tree
+	{
+		int tu = locate_endpoint(&s->v1, &s->v0, s->root1);
+		int tl = trapezoid_struct->new_lower_trap(tu, s);
+
+		// Now update the query structure and obtain the sinks for the two trapezoids	
+		int i1 = newnode();		// Upper trapezoid sink 
+		int i2 = newnode();		// Lower trapezoid sink 
+		int sk = trapezoid_struct->get_sink(tu); // tr.at(tu).sink;
+
+		qs.at(sk).nodetype = NODE_TYPE::T_Y;
+		qs.at(sk).yval = s->v1;
+		qs.at(sk).segnum = segnum;	// not really reqd ... maybe later 
+		qs.at(sk).left = i2;
+		qs.at(sk).right = i1;
+
+		qs.at(i1).nodetype = NODE_TYPE::T_SINK;
+		qs.at(i1).trnum = tu;
+		qs.at(i1).parent = sk;
+
+		qs.at(i2).nodetype = NODE_TYPE::T_SINK;
+		qs.at(i2).trnum = tl;
+		qs.at(i2).parent = sk;
+
+		trapezoid_struct->set_sink(tu, i1);
+		trapezoid_struct->set_sink(tl, i2);
+		tlast = tl;
+	}
+	else // v1 already present 
+	{
+		// Get the lowermost intersecting trapezoid 
+		tlast = locate_endpoint(&s->v1, &s->v0, s->root1);
+		tribot = true;
+	}
+
+	// Thread the segment into the query tree creating a new X-node 
+	// First, split all the trapezoids which are intersected by s into two 
+
+	int t = tfirst;	// topmost trapezoid 
+	// traverse from top to bot 
+	while ((t > 0) && point_t::_greater_than_equal_to(trapezoid_struct->get_min_y(t), trapezoid_struct->get_min_y(tlast))) 
+	{
+		int sk = trapezoid_struct->get_sink(t);
+		int i1 = newnode();		// left trapezoid sink 
+		int i2 = newnode();		// right trapezoid sink 
+
+		qs.at(sk).nodetype = NODE_TYPE::T_X;
+		qs.at(sk).segnum = segnum;
+		qs.at(sk).left = i1;
+		qs.at(sk).right = i2;
+
+		qs.at(i1).nodetype = NODE_TYPE::T_SINK;	// left trapezoid (use existing one) 
+		qs.at(i1).trnum = t;
+		qs.at(i1).parent = sk;
+
+		qs.at(i2).nodetype = NODE_TYPE::T_SINK;	// right trapezoid (allocate new) 
+		qs.at(i2).parent = sk;
+		qs.at(i2).trnum = trapezoid_struct->newtrap(Trapezoid::STATE::ST_VALID);
+		int tn = qs.at(i2).trnum;
+
+		if (t == tfirst)
+			tfirstr = tn;
+		if (point_t::_equal_to(trapezoid_struct->get_min_y(t), trapezoid_struct->get_min_y(tlast)))
+			tlastr = tn;
+
+		trapezoid_struct->copy(t, tn);
+		trapezoid_struct->set_sink(t, i1);
+		trapezoid_struct->set_sink(tn, i2);
+		int t_sav = t;
+		int tn_sav = tn;
+		if (!trapezoid_struct->add_segment(polygon, s, t, tn, tlast, tribot, is_swapped))
+			break;
+	}// end-while 
+
+	// Now combine those trapezoids which share common segments. We can
+	// use the pointers to the parent to connect these together. This 
+	// works only because all these new trapezoids have been formed 
+	// due to splitting by the segment, and hence have only one parent 
+
+	merge_trapezoids(segnum, tfirst, tlast, Trapezoid::SIDE::S_LEFT);
+	merge_trapezoids(segnum, tfirstr, tlastr, Trapezoid::SIDE::S_RIGHT);
+
+	polygon->get_segment(segnum)->is_inserted = true;
 }
+
+void Query::merge_trapezoids(int segnum, int tfirst, int tlast, Trapezoid::SIDE side)
+{
+	bool cond = false;
+	int tr_t_sink = -1; 
+	int tr_tnext_sink = -1;
+	// First merge polys on the LHS 
+	int t = tfirst;
+	while ((t > 0) && point_t::_greater_than_equal_to(trapezoid_struct->get_min_y(t), trapezoid_struct->get_min_y(tlast)))
+	{
+		if (trapezoid_struct->merge_trapezoids(segnum, t, side, tr_t_sink, tr_tnext_sink))
+		{
+			// Use the upper node as the new node i.e. t 
+			int ptnext = qs.at(tr_tnext_sink).parent;
+
+			if (qs.at(ptnext).left == tr_tnext_sink)
+				qs.at(ptnext).left = tr_t_sink;
+			else
+				qs.at(ptnext).right = tr_t_sink;	// redirect parent
+		}
+	
+	}
+}
+
+// Update the roots stored for each of the endpoints of the segment.
+// This is done to speed up the location-query for the endpoint when
+// the segment is inserted into the trapezoidation subsequently
+void Query::find_new_roots(int segnum)
+{
+	segment_t* s = polygon->get_segment(segnum);
+
+	if (s->is_inserted)
+		return;
+
+	s->root0 = locate_endpoint(&s->v0, &s->v1, s->root0);
+	s->root0 = trapezoid_struct->get_sink(s->root0); // tr.at(s->root0).sink;
+
+	s->root1 = locate_endpoint(&s->v1, &s->v0, s->root1);
+	s->root1 = trapezoid_struct->get_sink(s->root1); // tr.at(s->root1).sink;
+}
+
+
+
+
+

@@ -153,7 +153,14 @@ void print_segments(int n)
 
 int main(int argc, char *argv[])
 {
-	std::cout << "Hello Worlds\n";
+	/*int v = 0;
+	int aux = 1;
+	int vfirst = 2;
+	if ((v = aux) != vfirst)
+		std::cout << "if v " << v << " aux " << aux << std::endl;
+	else
+		std::cout << "else v " << v << " aux " << aux << std::endl;*/
+
 
 	Triangulation triangulation;
 	if (!triangulation.ReadFile("../../data_1"))
@@ -162,14 +169,8 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	std::cout << "Polygon read\n";
+	std::cout << "Init\n";
 	triangulation.Init();
-	triangulation.construct_trapezoids();
-	triangulation.monotonate_trapezoids();
-	triangulation.triangulate_monotone_polygons();
-
-	//for (int i = 0; i < ntriangles; i++)
-	//	std::cout << "triangle #" << op[i][0] << " " << op[i][1] << " " << op[i][1] << "\n";
-
 
 	/*int n, genus;
 
@@ -186,5 +187,6 @@ int main(int argc, char *argv[])
 	*/
 
 
+	std::cout << "Triangulation done\n";
 	return 0;
 }

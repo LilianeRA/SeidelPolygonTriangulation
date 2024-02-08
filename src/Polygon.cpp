@@ -86,7 +86,7 @@ bool Polygon::ReadFile(const std::string& filepath)
 		ccount++;
 	}
 
-	genus = ncontours - 1;
+	//genus = ncontours - 1;
 
 	infile.close();
 
@@ -117,39 +117,6 @@ void Polygon::Init()
 
 }
 
-bool Polygon::set_root0(int index, int root)
-{
-	if (index < 0 || index >= segments.size())
-		return false;
-	segments.at(index).root0 = root;
-	return true;
-}
-
-bool Polygon::set_root1(int index, int root)
-{
-	if (index < 0 || index >= segments.size())
-		return false;
-	segments.at(index).root1 = root;
-	return true;
-}
-
-int Polygon::get_total_segments()
-{
-	return segments.size();
-}
-
-int Polygon::choose_permutation()
-{
-	return permute.at(Polygon::choose_idx++);
-}
-
-segment_t* Polygon::get_segment(int segnum)
-{
-	if (segnum < 0 || segnum >= segments.size())
-		return nullptr;
-	return &segments.at(segnum);
-}
-
 // Generate a random permutation of the segments 1..n 
 void Polygon::generate_random_ordering()
 {
@@ -170,4 +137,46 @@ void Polygon::generate_random_ordering()
 
 	//std::copy(permute.begin(), permute.end(), std::ostream_iterator<int>(std::cout, " "));
 	//std::cout << '\n';
+}
+
+int Polygon::choose_permutation() const
+{
+	return permute.at(Polygon::choose_idx++);
+}
+
+segment_t* Polygon::get_segment(int segnum) 
+{
+	if (segnum < 0 || segnum >= segments.size())
+		return nullptr;
+	return &segments.at(segnum);
+}
+
+int Polygon::get_total_segments() const
+{
+	return segments.size();
+}
+
+
+bool Polygon::set_root0(int index, int root)
+{
+	if (index < 0 || index >= segments.size())
+		return false;
+	segments.at(index).root0 = root;
+	return true;
+}
+
+bool Polygon::set_root1(int index, int root)
+{
+	if (index < 0 || index >= segments.size())
+		return false;
+	segments.at(index).root1 = root;
+	return true;
+}
+
+void Polygon::set_segment_inserted(int segnum, bool inserted)
+{
+	if (segnum >= 0 && segnum < segments.size())
+	{
+		segments.at(segnum).is_inserted = inserted;
+	}
 }
